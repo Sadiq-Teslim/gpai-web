@@ -142,7 +142,7 @@ const Calculator = () => {
 
         {/* Course inputs */}
         <div className="max-w-4xl mx-auto">
-          <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 shadow-2xl shadow-purple-500/10 border border-white/50">
+          <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-4 sm:p-8 shadow-2xl shadow-purple-500/10 border border-white/50">
             <div className="flex items-center justify-between mb-8">
               <h3 className="text-2xl font-bold text-slate-800 flex items-center">
                 <svg
@@ -172,9 +172,9 @@ const Calculator = () => {
               {/* Header row */}
               <div className="hidden md:grid grid-cols-12 gap-4 text-sm font-medium text-slate-500 px-2">
                 <div className="col-span-5">Course Code</div>
-                <div className="col-span-2">Units</div>
-                <div className="col-span-2">Score</div>
-                <div className="col-span-2">Grade</div>
+                <div className="col-span-2 text-center">Units</div>
+                <div className="col-span-2 text-center">Score</div>
+                <div className="col-span-2 text-center">Grade</div>
                 <div className="col-span-1"></div>
               </div>
 
@@ -187,9 +187,11 @@ const Calculator = () => {
                     key={course.id}
                     className="group bg-gradient-to-r from-white to-slate-50 rounded-2xl p-4 border border-slate-200/50 hover:border-purple-300/50 hover:shadow-lg transition-all duration-300"
                   >
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                      {/* Course name */}
-                      <div className="md:col-span-5">
+                    {/* START: MOBILE-FIRST REFACTOR */}
+                    <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
+                      
+                      {/* Course Code (takes full width on mobile) */}
+                      <div className="md:col-span-5 mb-4 md:mb-0">
                         <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden">
                           Course Code
                         </label>
@@ -208,101 +210,106 @@ const Calculator = () => {
                         />
                       </div>
 
-                      {/* Units */}
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden">
-                          Units
-                        </label>
-                        <input
-                          type="number"
-                          placeholder="Units"
-                          value={course.units}
-                          onChange={(e) =>
-                            handleCourseChange(
-                              course.id,
-                              "units",
-                              e.target.value
-                            )
-                          }
-                          className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 bg-white/80"
-                          min="1"
-                          max="10"
-                        />
-                      </div>
+                      {/* Horizontal group for Units, Score, Grade, and Remove on mobile */}
+                      <div className="flex items-center gap-2 md:contents">
+                        
+                        {/* Units */}
+                        <div className="flex-1 md:col-span-2">
+                          <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
+                            Units
+                          </label>
+                          <input
+                            type="number"
+                            placeholder="Units"
+                            value={course.units}
+                            onChange={(e) =>
+                              handleCourseChange(
+                                course.id,
+                                "units",
+                                e.target.value
+                              )
+                            }
+                            className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 bg-white/80 text-center"
+                            min="1"
+                            max="10"
+                          />
+                        </div>
 
-                      {/* Score */}
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden">
-                          Score
-                        </label>
-                        <input
-                          type="number"
-                          placeholder="Score"
-                          value={course.score}
-                          onChange={(e) =>
-                            handleCourseChange(
-                              course.id,
-                              "score",
-                              e.target.value
-                            )
-                          }
-                          className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 bg-white/80"
-                          min="0"
-                          max="100"
-                        />
-                      </div>
+                        {/* Score */}
+                        <div className="flex-1 md:col-span-2">
+                          <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
+                            Score
+                          </label>
+                          <input
+                            type="number"
+                            placeholder="Score"
+                            value={course.score}
+                            onChange={(e) =>
+                              handleCourseChange(
+                                course.id,
+                                "score",
+                                e.target.value
+                              )
+                            }
+                            className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 bg-white/80 text-center"
+                            min="0"
+                            max="100"
+                          />
+                        </div>
 
-                      {/* Grade display */}
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden">
-                          Grade
-                        </label>
-                        <div className="flex items-center justify-center h-12">
-                          {gradeLetter && (
-                            <div
-                              className={`px-3 py-1 rounded-lg text-white font-bold text-lg ${
-                                gradeLetter === "A"
-                                  ? "bg-green-500"
-                                  : gradeLetter === "B"
-                                  ? "bg-blue-500"
-                                  : gradeLetter === "C"
-                                  ? "bg-yellow-500"
-                                  : gradeLetter === "D"
-                                  ? "bg-orange-500"
-                                  : gradeLetter === "E"
-                                  ? "bg-red-400"
-                                  : "bg-red-600"
-                              }`}
+                        {/* Grade display */}
+                        <div className="flex-1 md:col-span-2">
+                          <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
+                            Grade
+                          </label>
+                          <div className="flex items-center justify-center h-12">
+                            {gradeLetter && (
+                              <div
+                                className={`px-3 py-1 rounded-lg text-white font-bold text-lg ${
+                                  gradeLetter === "A"
+                                    ? "bg-green-500"
+                                    : gradeLetter === "B"
+                                    ? "bg-blue-500"
+                                    : gradeLetter === "C"
+                                    ? "bg-yellow-500"
+                                    : gradeLetter === "D"
+                                    ? "bg-orange-500"
+                                    : gradeLetter === "E"
+                                    ? "bg-red-400"
+                                    : "bg-red-600"
+                                }`}
+                              >
+                                {gradeLetter}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Remove button */}
+                        <div className="flex-shrink-0 md:col-span-1 flex justify-center">
+                          <button
+                            onClick={() => handleRemoveCourse(course.id)}
+                            disabled={courses.length === 1}
+                            className="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-full font-bold hover:from-red-600 hover:to-pink-600 transition-all duration-300 hover:scale-110 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center"
+                          >
+                            <svg
+                              className="w-5 h-5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
                             >
-                              {gradeLetter}
-                            </div>
-                          )}
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
                         </div>
                       </div>
-
-                      {/* Remove button */}
-                      <div className="md:col-span-1 flex justify-center">
-                        <button
-                          onClick={() => handleRemoveCourse(course.id)}
-                          disabled={courses.length === 1}
-                          className="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-full font-bold hover:from-red-600 hover:to-pink-600 transition-all duration-300 hover:scale-110 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center"
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
-                      </div>
                     </div>
+                    {/* END: MOBILE-FIRST REFACTOR */}
                   </div>
                 );
               })}
