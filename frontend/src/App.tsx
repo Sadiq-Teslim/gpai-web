@@ -1,6 +1,6 @@
 import Navbar from "./components/Navbar";
 import Hero from "./components/Hero";
-import Calculator from "./components/Calculator";
+import Calculator from "./components/calculators/OneTimeCalculator";
 import WhyGPAi from "./components/WhyGPAi";
 import SneakPeek from "./components/SneakPeek";
 import Footer from "./components/Footer";

@@ -19,7 +19,7 @@ const Hero = () => {
 
       <div className="relative z-10 container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center py-20">
         {/* Badge */}
-        <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white/90 text-sm font-medium mb-8 hover:bg-white/20 transition-all duration-300">
+        <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white/90 text-sm font-medium mb-8 hover:bg-white/20 transition-all duration-300 mt-4">
           <span className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></span>
           AI-Powered • Smart • Accurate
         </div>

@@ -1,17 +1,15 @@
-// src/routes.tsx
 import { createBrowserRouter } from "react-router-dom";
-import App from "./App";
-// import Home from "./pages/Home";
-// import About from "./pages/About";
+import App from "./App"; // This is your main landing page
+import GPAiToolsPage from "./pages/GPAiToolsPage"; // This is your new tools page
 
 const router = createBrowserRouter([
   {
     path: "/",
-    element: <App />,
-    children: [
-      // { index: true, element: <Home /> },
-      // { path: "about", element: <About /> },
-    ],
+    element: <App />, // The landing page component
+  },
+  {
+    path: "/gpai-tools", // A separate route for the tools page
+    element: <GPAiToolsPage />,
   },
 ]);
 

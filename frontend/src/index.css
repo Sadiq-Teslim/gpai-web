@@ -11,4 +11,7 @@
   h1, h2, h3 {
     @apply font-poppins text-dark-text;
   }
+  .animate-fade-in {
+    animation: fade-in 0.5s ease-out forwards;
+  }
 }
