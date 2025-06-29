@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -52,7 +52,7 @@ const Navbar = () => {
         <div className="hidden md:flex items-center space-x-8">
           <a
             href="#calculator"
-            className={`relative font-medium transition-all duration-300 hover:scale-105 group transition transition-transform ${
+            className={`relative font-medium duration-300 hover:scale-105 group transition-transform ${
               isScrolled
                 ? "text-slate-600 hover:text-purple-600"
                 : "text-white/80 hover:text-white"
