@@ -1,4 +1,5 @@
 import { useState } from "react";
+import AiSummary from "./AiSummary"; // You'll need to create this component
 
 type Course = { id: number; name: string; units: string; score: string };
 
@@ -20,12 +21,17 @@ const getGradeLetter = (score: number): string => {
   return "F";
 };
 
-const Calculator = () => {
+// Renamed from Calculator to OneTimeCalculator for clarity
+const OneTimeCalculator = () => {
   const [courses, setCourses] = useState<Course[]>([
     { id: 1, name: "", units: "", score: "" },
   ]);
   const [gpa, setGpa] = useState<string | null>(null);
   const [error, setError] = useState<string>("");
+
+  // --- NEW: State for AI functionality ---
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   const handleAddCourse = () =>
     setCourses([
@@ -47,10 +53,14 @@ const Calculator = () => {
     if (courses.length > 1) setCourses(courses.filter((c) => c.id !== id));
   };
 
-  const calculateGPA = () => {
+  // --- UPDATED: calculateGPA is now an async function ---
+  const calculateGPA = async () => {
     setError("");
+    setAiSummary(null); // Reset AI summary on each new calculation
     let totalQualityPoints = 0,
       totalUnits = 0;
+
+    // The GPA calculation logic remains the same
     for (const course of courses) {
       const units = parseInt(course.units),
         score = parseInt(course.score);
@@ -75,13 +85,41 @@ const Calculator = () => {
       setGpa(null);
       return;
     }
-    setGpa((totalQualityPoints / totalUnits).toFixed(2));
+
+    const finalGpa = (totalQualityPoints / totalUnits).toFixed(2);
+    setGpa(finalGpa);
+
+    // --- NEW: Trigger the AI call after successful GPA calculation ---
+    try {
+      setIsAiLoading(true);
+      const response = await fetch("/.netlify/functions/getAiSummary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courses, gpa: finalGpa }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch AI summary");
+      }
+
+      const data = await response.json();
+      setAiSummary(data.summary);
+    } catch (err) {
+      console.error("AI Fetch Error:", err);
+      // Fail silently without showing an error to the user for the AI part
+      setAiSummary(null);
+    } finally {
+      setIsAiLoading(false);
+    }
   };
 
+  // --- UPDATED: handleReset now clears AI state as well ---
   const handleReset = () => {
     setCourses([{ id: 1, name: "", units: "", score: "" }]);
     setGpa(null);
     setError("");
+    setAiSummary(null);
+    setIsAiLoading(false);
   };
 
   const getGPAColor = (gpaValue: string) => {
@@ -98,6 +136,7 @@ const Calculator = () => {
   }, 0);
 
   return (
+    // The entire JSX structure below is identical to your original code.
     <section id="calculator" className="relative py-20 px-4 overflow-hidden">
       {/* Background with gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-slate-50 via-white to-purple-50">
@@ -169,7 +208,6 @@ const Calculator = () => {
             </div>
 
             <div className="space-y-4">
-              {/* Header row */}
               <div className="hidden md:grid grid-cols-12 gap-4 text-sm font-medium text-slate-500 px-2">
                 <div className="col-span-5">Course Code</div>
                 <div className="col-span-2 text-center">Units</div>
@@ -187,10 +225,7 @@ const Calculator = () => {
                     key={course.id}
                     className="group bg-gradient-to-r from-white to-slate-50 rounded-2xl p-4 border border-slate-200/50 hover:border-purple-300/50 hover:shadow-lg transition-all duration-300"
                   >
-                    {/* START: MOBILE-FIRST REFACTOR */}
                     <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
-                      
-                      {/* Course Code (takes full width on mobile) */}
                       <div className="md:col-span-5 mb-4 md:mb-0">
                         <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden">
                           Course Code
@@ -209,11 +244,7 @@ const Calculator = () => {
                           className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 bg-white/80"
                         />
                       </div>
-
-                      {/* Horizontal group for Units, Score, Grade, and Remove on mobile */}
                       <div className="flex items-center gap-2 md:contents">
-                        
-                        {/* Units */}
                         <div className="flex-1 md:col-span-2">
                           <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
                             Units
@@ -234,8 +265,6 @@ const Calculator = () => {
                             max="10"
                           />
                         </div>
-
-                        {/* Score */}
                         <div className="flex-1 md:col-span-2">
                           <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
                             Score
@@ -256,8 +285,6 @@ const Calculator = () => {
                             max="100"
                           />
                         </div>
-
-                        {/* Grade display */}
                         <div className="flex-1 md:col-span-2">
                           <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
                             Grade
@@ -284,8 +311,6 @@ const Calculator = () => {
                             )}
                           </div>
                         </div>
-
-                        {/* Remove button */}
                         <div className="flex-shrink-0 md:col-span-1 flex justify-center">
                           <button
                             onClick={() => handleRemoveCourse(course.id)}
@@ -309,13 +334,11 @@ const Calculator = () => {
                         </div>
                       </div>
                     </div>
-                    {/* END: MOBILE-FIRST REFACTOR */}
                   </div>
                 );
               })}
             </div>
 
-            {/* Action buttons */}
             <div className="flex flex-col sm:flex-row justify-center gap-4 mt-8">
               <button
                 onClick={handleAddCourse}
@@ -336,7 +359,6 @@ const Calculator = () => {
                 </svg>
                 Add Course
               </button>
-
               <button
                 onClick={calculateGPA}
                 className="group px-10 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-2xl hover:from-purple-700 hover:to-blue-700 transition-all duration-300 hover:scale-105 shadow-xl hover:shadow-2xl"
@@ -362,7 +384,6 @@ const Calculator = () => {
           </div>
         </div>
 
-        {/* Error message */}
         {error && (
           <div className="mt-8 max-w-2xl mx-auto p-4 bg-red-50 border border-red-200 rounded-2xl">
             <div className="flex items-center">
@@ -384,17 +405,14 @@ const Calculator = () => {
           </div>
         )}
 
-        {/* GPA Result */}
         {gpa !== null && (
           <div className="mt-12 max-w-lg mx-auto">
             <div className="bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/50 text-center overflow-hidden relative">
-              {/* Animated background */}
               <div
                 className={`absolute inset-0 bg-gradient-to-br ${getGPAColor(
                   gpa
                 )} opacity-5`}
               ></div>
-
               <div className="relative z-10">
                 <div className="mb-4">
                   <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 text-sm font-medium mb-4">
@@ -414,11 +432,9 @@ const Calculator = () => {
                     Calculation Complete
                   </div>
                 </div>
-
                 <p className="text-lg text-slate-600 mb-2">
                   Your Cumulative GPA is
                 </p>
-
                 <div
                   className={`inline-block p-6 rounded-2xl bg-gradient-to-r ${getGPAColor(
                     gpa
@@ -429,13 +445,11 @@ const Calculator = () => {
                   </p>
                   <p className="text-white/90 text-lg">out of 5.0</p>
                 </div>
-
                 <div className="text-sm text-slate-500 mb-6">
                   Based on{" "}
                   {courses.filter((c) => c.name && c.units && c.score).length}{" "}
                   courses • {totalUnits} total units
                 </div>
-
                 <button
                   onClick={handleReset}
                   className="group px-8 py-3 text-slate-600 border-2 border-slate-300 rounded-2xl hover:bg-slate-50 hover:border-slate-400 transition-all duration-300 font-medium"
@@ -461,27 +475,23 @@ const Calculator = () => {
             </div>
           </div>
         )}
+
+        {/* --- NEW: AI Summary section --- */}
+        {/* This will render the loading state or the final AI summary */}
+        {(isAiLoading || aiSummary) && (
+          <div className="mt-8">
+            <AiSummary summary={aiSummary} isLoading={isAiLoading} />
+          </div>
+        )}
       </div>
 
       <style>{`
-        @keyframes float {
-          0%,
-          100% {
-            transform: translateY(0px);
-          }
-          50% {
-            transform: translateY(-20px);
-          }
-        }
-        .animate-float {
-          animation: float 6s ease-in-out infinite;
-        }
-        .animation-delay-2000 {
-          animation-delay: 2s;
-        }
+        @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-20px); } }
+        .animate-float { animation: float 6s ease-in-out infinite; }
+        .animation-delay-2000 { animation-delay: 2s; }
       `}</style>
     </section>
   );
 };
 
-export default Calculator;
+export default OneTimeCalculator;
