@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "openai": "^5.9.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -18,7 +19,7 @@
   "devDependencies": {
     "@eslint/js": "^9.29.0",
     "@types/aws-lambda": "^8.10.150",
-    "@types/node": "^24.0.14",
+    "@types/node": "^24.2.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.5.2",

@@ -1,21 +1,16 @@
-import { OpenAI } from 'openai';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-import type { APIGatewayEvent } from 'aws-lambda';
-
-export const handler = async (event: APIGatewayEvent) => {
-  // Only allow POST requests
+export const handler = async (event: any) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
   try {
-    const { courses, gpa } = JSON.parse(event.body ?? '{}');
+    const { courses, gpa } = JSON.parse(event.body);
 
-    // This is the "magic" prompt we send to the AI
     const prompt = `
       You are GPAi, a friendly and encouraging academic advisor. 
       A student just calculated their GPA. Their GPA is ${gpa}. 
@@ -25,23 +20,19 @@ export const handler = async (event: APIGatewayEvent) => {
       Keep the tone positive and motivating, like you're talking to a friend.
     `;
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        { role: 'system', content: 'You are a helpful and encouraging academic assistant named GPAi.' },
-        { role: 'user', content: prompt },
-      ],
-      max_tokens: 150, // Control the length and cost
-    });
 
-    const summary = response.choices[0].message.content;
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const summary = response.text();
 
     return {
       statusCode: 200,
       body: JSON.stringify({ summary }),
     };
   } catch (error) {
-    console.error('AI Summary Error:', error);
+    console.error('Gemini AI Summary Error:', error);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Failed to generate AI summary.' }),
