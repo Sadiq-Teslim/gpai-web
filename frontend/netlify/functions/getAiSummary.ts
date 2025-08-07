@@ -18,6 +18,7 @@ export const handler = async (event: any) => {
       Write a summary of their performance and what you think they can do to improve. It is justa one-off advice, not a continous one so its not conversational. 
       Mention their highest-scoring course by name as a 'strong point'.
       Keep the tone positive and motivating, like you're talking to a friend. 
+      Don't make it too long. It should be as brief as possible. 
     `;
 
 

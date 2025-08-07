@@ -1,5 +1,6 @@
-import { useState } from "react";
-import AiSummary from "./AiSummary"; // You'll need to create this component
+import { useState, useRef } from "react";
+import AiSummary from "./AiSummary";
+import ResultsModal from "../modals/ResultsModal";
 
 type Course = { id: number; name: string; units: string; score: string };
 
@@ -21,17 +22,17 @@ const getGradeLetter = (score: number): string => {
   return "F";
 };
 
-// Renamed from Calculator to OneTimeCalculator for clarity
 const OneTimeCalculator = () => {
   const [courses, setCourses] = useState<Course[]>([
     { id: 1, name: "", units: "", score: "" },
   ]);
   const [gpa, setGpa] = useState<string | null>(null);
   const [error, setError] = useState<string>("");
-
-  // --- NEW: State for AI functionality ---
   const [aiSummary, setAiSummary] = useState<string | null>(null);
-  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   const handleAddCourse = () =>
     setCourses([
@@ -53,14 +54,16 @@ const OneTimeCalculator = () => {
     if (courses.length > 1) setCourses(courses.filter((c) => c.id !== id));
   };
 
-  // --- UPDATED: calculateGPA is now an async function ---
   const calculateGPA = async () => {
+    // 1. Reset state and start loading
     setError("");
-    setAiSummary(null); // Reset AI summary on each new calculation
+    setGpa(null);
+    setAiSummary(null);
+    setIsCalculating(true);
+
+    // 2. Perform GPA Calculation
     let totalQualityPoints = 0,
       totalUnits = 0;
-
-    // The GPA calculation logic remains the same
     for (const course of courses) {
       const units = parseInt(course.units),
         score = parseInt(course.score);
@@ -74,7 +77,7 @@ const OneTimeCalculator = () => {
         setError(
           "Please fill all fields correctly. Units must be positive and score between 0-100."
         );
-        setGpa(null);
+        setIsCalculating(false);
         return;
       }
       totalQualityPoints += getGradePoint(score) * units;
@@ -82,44 +85,44 @@ const OneTimeCalculator = () => {
     }
     if (totalUnits === 0) {
       setError("Cannot calculate GPA with zero units.");
-      setGpa(null);
+      setIsCalculating(false);
       return;
     }
-
     const finalGpa = (totalQualityPoints / totalUnits).toFixed(2);
-    setGpa(finalGpa);
+    setGpa(finalGpa); // Set GPA immediately
 
-    // --- NEW: Trigger the AI call after successful GPA calculation ---
+    // 3. Fetch AI Summary
     try {
-      setIsAiLoading(true);
       const response = await fetch("/.netlify/functions/getAiSummary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ courses, gpa: finalGpa }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch AI summary");
-      }
-
+      if (!response.ok) throw new Error("Failed to fetch AI summary");
       const data = await response.json();
       setAiSummary(data.summary);
     } catch (err) {
       console.error("AI Fetch Error:", err);
-      // Fail silently without showing an error to the user for the AI part
-      setAiSummary(null);
+      setAiSummary(null); // If AI fails, summary is null
     } finally {
-      setIsAiLoading(false);
+      // 4. Stop loading and show the modal
+      setIsCalculating(false);
+      setIsModalOpen(true);
     }
   };
 
-  // --- UPDATED: handleReset now clears AI state as well ---
   const handleReset = () => {
     setCourses([{ id: 1, name: "", units: "", score: "" }]);
     setGpa(null);
     setError("");
     setAiSummary(null);
-    setIsAiLoading(false);
+    setIsCalculating(false);
+  };
+
+  const handleCloseModalAndScroll = () => {
+    setIsModalOpen(false);
+    resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const getGPAColor = (gpaValue: string) => {
@@ -136,259 +139,31 @@ const OneTimeCalculator = () => {
   }, 0);
 
   return (
-    // The entire JSX structure below is identical to your original code.
-    <section id="calculator" className="relative py-20 px-4 overflow-hidden">
-      {/* Background with gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-50 via-white to-purple-50">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(120,119,198,0.1),transparent_50%)]"></div>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(59,130,246,0.1),transparent_50%)]"></div>
-      </div>
-
-      {/* Floating elements */}
-      <div className="absolute top-20 left-10 w-20 h-20 bg-gradient-to-r from-purple-200 to-pink-200 rounded-full opacity-30 animate-float"></div>
-      <div className="absolute bottom-20 right-10 w-32 h-32 bg-gradient-to-r from-blue-200 to-cyan-200 rounded-full opacity-30 animate-float animation-delay-2000"></div>
-
-      <div className="relative z-10">
-        {/* Header */}
-        <div className="text-center max-w-4xl mx-auto mb-16">
-          <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-purple-100 to-blue-100 text-purple-700 text-sm font-medium mb-6">
-            <svg
-              className="w-4 h-4 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-              />
-            </svg>
-            Smart GPA Calculator
-          </div>
-          <h2 className="text-4xl md:text-5xl font-bold mb-6 bg-gradient-to-r from-slate-800 to-purple-800 bg-clip-text text-transparent">
-            Calculate Your GPA
-            <span className="block text-2xl md:text-3xl font-normal text-slate-600 mt-2">
-              Instantly & Accurately
-            </span>
-          </h2>
-          <p className="text-xl text-slate-600 max-w-2xl mx-auto">
-            Enter your course details below and watch your GPA calculate in
-            real-time with our AI-powered system.
-          </p>
+    <>
+      <ResultsModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModalAndScroll}
+        gpa={gpa}
+        aiSummary={aiSummary}
+        isLoadingAi={isCalculating && gpa !== null}
+      />
+      <section id="calculator" className="relative py-20 px-4 overflow-hidden">
+        {/* Background with gradient */}
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-50 via-white to-purple-50">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(120,119,198,0.1),transparent_50%)]"></div>
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(59,130,246,0.1),transparent_50%)]"></div>
         </div>
 
-        {/* Course inputs */}
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-4 sm:p-8 shadow-2xl shadow-purple-500/10 border border-white/50">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-bold text-slate-800 flex items-center">
-                <svg
-                  className="w-6 h-6 mr-3 text-purple-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                  />
-                </svg>
-                Course Details
-              </h3>
-              <div className="text-right">
-                <div className="text-sm text-slate-500">Total Units</div>
-                <div className="text-2xl font-bold text-purple-600">
-                  {totalUnits}
-                </div>
-              </div>
-            </div>
+        {/* Floating elements */}
+        <div className="absolute top-20 left-10 w-20 h-20 bg-gradient-to-r from-purple-200 to-pink-200 rounded-full opacity-30 animate-float"></div>
+        <div className="absolute bottom-20 right-10 w-32 h-32 bg-gradient-to-r from-blue-200 to-cyan-200 rounded-full opacity-30 animate-float animation-delay-2000"></div>
 
-            <div className="space-y-4">
-              <div className="hidden md:grid grid-cols-12 gap-4 text-sm font-medium text-slate-500 px-2">
-                <div className="col-span-5">Course Code</div>
-                <div className="col-span-2 text-center">Units</div>
-                <div className="col-span-2 text-center">Score</div>
-                <div className="col-span-2 text-center">Grade</div>
-                <div className="col-span-1"></div>
-              </div>
-
-              {courses.map((course, index) => {
-                const score = parseInt(course.score) || 0;
-                const gradeLetter = course.score ? getGradeLetter(score) : "";
-
-                return (
-                  <div
-                    key={course.id}
-                    className="group bg-gradient-to-r from-white to-slate-50 rounded-2xl p-4 border border-slate-200/50 hover:border-purple-300/50 hover:shadow-lg transition-all duration-300"
-                  >
-                    <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
-                      <div className="md:col-span-5 mb-4 md:mb-0">
-                        <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden">
-                          Course Code
-                        </label>
-                        <input
-                          type="text"
-                          placeholder={`Course ${index + 1} (e.g. MTH 101)`}
-                          value={course.name}
-                          onChange={(e) =>
-                            handleCourseChange(
-                              course.id,
-                              "name",
-                              e.target.value
-                            )
-                          }
-                          className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 bg-white/80"
-                        />
-                      </div>
-                      <div className="flex items-center gap-2 md:contents">
-                        <div className="flex-1 md:col-span-2">
-                          <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
-                            Units
-                          </label>
-                          <input
-                            type="number"
-                            placeholder="Units"
-                            value={course.units}
-                            onChange={(e) =>
-                              handleCourseChange(
-                                course.id,
-                                "units",
-                                e.target.value
-                              )
-                            }
-                            className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 bg-white/80 text-center"
-                            min="1"
-                            max="10"
-                          />
-                        </div>
-                        <div className="flex-1 md:col-span-2">
-                          <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
-                            Score
-                          </label>
-                          <input
-                            type="number"
-                            placeholder="Score"
-                            value={course.score}
-                            onChange={(e) =>
-                              handleCourseChange(
-                                course.id,
-                                "score",
-                                e.target.value
-                              )
-                            }
-                            className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 bg-white/80 text-center"
-                            min="0"
-                            max="100"
-                          />
-                        </div>
-                        <div className="flex-1 md:col-span-2">
-                          <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
-                            Grade
-                          </label>
-                          <div className="flex items-center justify-center h-12">
-                            {gradeLetter && (
-                              <div
-                                className={`px-3 py-1 rounded-lg text-white font-bold text-lg ${
-                                  gradeLetter === "A"
-                                    ? "bg-green-500"
-                                    : gradeLetter === "B"
-                                    ? "bg-blue-500"
-                                    : gradeLetter === "C"
-                                    ? "bg-yellow-500"
-                                    : gradeLetter === "D"
-                                    ? "bg-orange-500"
-                                    : gradeLetter === "E"
-                                    ? "bg-red-400"
-                                    : "bg-red-600"
-                                }`}
-                              >
-                                {gradeLetter}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex-shrink-0 md:col-span-1 flex justify-center">
-                          <button
-                            onClick={() => handleRemoveCourse(course.id)}
-                            disabled={courses.length === 1}
-                            className="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-full font-bold hover:from-red-600 hover:to-pink-600 transition-all duration-300 hover:scale-110 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center"
-                          >
-                            <svg
-                              className="w-5 h-5"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                              />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="flex flex-col sm:flex-row justify-center gap-4 mt-8">
-              <button
-                onClick={handleAddCourse}
-                className="group flex items-center justify-center px-8 py-4 text-purple-600 border-2 border-purple-300 rounded-2xl hover:bg-purple-50 hover:border-purple-400 transition-all duration-300 font-medium"
-              >
-                <svg
-                  className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-300"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                  />
-                </svg>
-                Add Course
-              </button>
-              <button
-                onClick={calculateGPA}
-                className="group px-10 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-2xl hover:from-purple-700 hover:to-blue-700 transition-all duration-300 hover:scale-105 shadow-xl hover:shadow-2xl"
-              >
-                <span className="flex items-center justify-center">
-                  <svg
-                    className="w-5 h-5 mr-2 group-hover:rotate-12 transition-transform duration-300"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-                    />
-                  </svg>
-                  Calculate GPA
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {error && (
-          <div className="mt-8 max-w-2xl mx-auto p-4 bg-red-50 border border-red-200 rounded-2xl">
-            <div className="flex items-center">
+        <div className="relative z-10">
+          {/* Header */}
+          <div className="text-center max-w-4xl mx-auto mb-16">
+            <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-purple-100 to-blue-100 text-purple-700 text-sm font-medium mb-6">
               <svg
-                className="w-6 h-6 text-red-500 mr-3"
+                className="w-4 h-4 mr-2"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -397,100 +172,350 @@ const OneTimeCalculator = () => {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
                 />
               </svg>
-              <p className="text-red-700 font-medium">{error}</p>
+              Smart GPA Calculator
             </div>
+            <h2 className="text-4xl md:text-5xl font-bold mb-6 bg-gradient-to-r from-slate-800 to-purple-800 bg-clip-text text-transparent">
+              Calculate Your GPA
+              <span className="block text-2xl md:text-3xl font-normal text-slate-600 mt-2">
+                Instantly & Accurately
+              </span>
+            </h2>
+            <p className="text-xl text-slate-600 max-w-2xl mx-auto">
+              Enter your course details below and watch your GPA calculate in
+              real-time with our AI-powered system.
+            </p>
           </div>
-        )}
 
-        {gpa !== null && (
-          <div className="mt-12 max-w-lg mx-auto">
-            <div className="bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/50 text-center overflow-hidden relative">
-              <div
-                className={`absolute inset-0 bg-gradient-to-br ${getGPAColor(
-                  gpa
-                )} opacity-5`}
-              ></div>
-              <div className="relative z-10">
-                <div className="mb-4">
-                  <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 text-sm font-medium mb-4">
-                    <svg
-                      className="w-4 h-4 mr-2"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    Calculation Complete
+          {/* Course inputs */}
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-4 sm:p-8 shadow-2xl shadow-purple-500/10 border border-white/50">
+              <div className="flex items-center justify-between mb-8">
+                <h3 className="text-2xl font-bold text-slate-800 flex items-center">
+                  <svg
+                    className="w-6 h-6 mr-3 text-purple-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                    />
+                  </svg>
+                  Course Details
+                </h3>
+                <div className="text-right">
+                  <div className="text-sm text-slate-500">Total Units</div>
+                  <div className="text-2xl font-bold text-purple-600">
+                    {totalUnits}
                   </div>
                 </div>
-                <p className="text-lg text-slate-600 mb-2">
-                  Your Cumulative GPA is
-                </p>
-                <div
-                  className={`inline-block p-6 rounded-2xl bg-gradient-to-r ${getGPAColor(
-                    gpa
-                  )} mb-6`}
-                >
-                  <p className="font-bold text-6xl md:text-7xl text-white mb-2">
-                    {gpa}
-                  </p>
-                  <p className="text-white/90 text-lg">out of 5.0</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="hidden md:grid grid-cols-12 gap-4 text-sm font-medium text-slate-500 px-2">
+                  <div className="col-span-5">Course Code</div>
+                  <div className="col-span-2 text-center">Units</div>
+                  <div className="col-span-2 text-center">Score</div>
+                  <div className="col-span-2 text-center">Grade</div>
+                  <div className="col-span-1"></div>
                 </div>
-                <div className="text-sm text-slate-500 mb-6">
-                  Based on{" "}
-                  {courses.filter((c) => c.name && c.units && c.score).length}{" "}
-                  courses • {totalUnits} total units
-                </div>
+
+                {courses.map((course, index) => {
+                  const score = parseInt(course.score) || 0;
+                  const gradeLetter = course.score ? getGradeLetter(score) : "";
+
+                  return (
+                    <div
+                      key={course.id}
+                      className="group bg-gradient-to-r from-white to-slate-50 rounded-2xl p-4 border border-slate-200/50 hover:border-purple-300/50 hover:shadow-lg transition-all duration-300"
+                    >
+                      <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
+                        <div className="md:col-span-5 mb-4 md:mb-0">
+                          <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden">
+                            Course Code
+                          </label>
+                          <input
+                            type="text"
+                            placeholder={`Course ${index + 1} (e.g. MTH 101)`}
+                            value={course.name}
+                            onChange={(e) =>
+                              handleCourseChange(
+                                course.id,
+                                "name",
+                                e.target.value
+                              )
+                            }
+                            className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 bg-white/80"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 md:contents">
+                          <div className="flex-1 md:col-span-2">
+                            <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
+                              Units
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="Units"
+                              value={course.units}
+                              onChange={(e) =>
+                                handleCourseChange(
+                                  course.id,
+                                  "units",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 bg-white/80 text-center"
+                              min="1"
+                              max="10"
+                            />
+                          </div>
+                          <div className="flex-1 md:col-span-2">
+                            <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
+                              Score
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="Score"
+                              value={course.score}
+                              onChange={(e) =>
+                                handleCourseChange(
+                                  course.id,
+                                  "score",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300 bg-white/80 text-center"
+                              min="0"
+                              max="100"
+                            />
+                          </div>
+                          <div className="flex-1 md:col-span-2">
+                            <label className="block text-sm font-medium text-slate-600 mb-1 md:hidden text-center">
+                              Grade
+                            </label>
+                            <div className="flex items-center justify-center h-12">
+                              {gradeLetter && (
+                                <div
+                                  className={`px-3 py-1 rounded-lg text-white font-bold text-lg ${
+                                    gradeLetter === "A"
+                                      ? "bg-green-500"
+                                      : gradeLetter === "B"
+                                      ? "bg-blue-500"
+                                      : gradeLetter === "C"
+                                      ? "bg-yellow-500"
+                                      : gradeLetter === "D"
+                                      ? "bg-orange-500"
+                                      : gradeLetter === "E"
+                                      ? "bg-red-400"
+                                      : "bg-red-600"
+                                  }`}
+                                >
+                                  {gradeLetter}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0 md:col-span-1 flex justify-center">
+                            <button
+                              onClick={() => handleRemoveCourse(course.id)}
+                              disabled={courses.length === 1}
+                              className="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-full font-bold hover:from-red-600 hover:to-pink-600 transition-all duration-300 hover:scale-110 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center"
+                            >
+                              <svg
+                                className="w-5 h-5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-center gap-4 mt-8">
                 <button
-                  onClick={handleReset}
-                  className="group px-8 py-3 text-slate-600 border-2 border-slate-300 rounded-2xl hover:bg-slate-50 hover:border-slate-400 transition-all duration-300 font-medium"
+                  onClick={handleAddCourse}
+                  disabled={isCalculating}
+                  className="group flex items-center justify-center px-8 py-4 text-purple-600 border-2 border-purple-300 rounded-2xl hover:bg-purple-50 hover:border-purple-400 transition-all duration-300 font-medium disabled:opacity-50"
+                >
+                  <svg
+                    className="w-5 h-5 mr-2 group-hover:scale-110 transition-transform duration-300"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                    />
+                  </svg>
+                  Add Course
+                </button>
+                <button
+                  onClick={calculateGPA}
+                  disabled={isCalculating}
+                  className="group px-10 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold rounded-2xl hover:from-purple-700 hover:to-blue-700 transition-all duration-300 hover:scale-105 shadow-xl hover:shadow-2xl disabled:opacity-75 disabled:hover:scale-100"
                 >
                   <span className="flex items-center justify-center">
-                    <svg
-                      className="w-5 h-5 mr-2 group-hover:rotate-180 transition-transform duration-500"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                      />
-                    </svg>
-                    Calculate Again
+                    {isCalculating ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin mr-3"></div>
+                        Calculating...
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          className="w-5 h-5 mr-2 group-hover:rotate-12 transition-transform duration-300"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                          />
+                        </svg>
+                        Calculate GPA
+                      </>
+                    )}
                   </span>
                 </button>
               </div>
             </div>
           </div>
-        )}
 
-        {/* --- NEW: AI Summary section --- */}
-        {/* This will render the loading state or the final AI summary */}
-        {(isAiLoading || aiSummary) && (
-          <div className="mt-8">
-            <AiSummary summary={aiSummary} isLoading={isAiLoading} />
+          <div ref={resultsRef} className="scroll-mt-24">
+            {error && (
+              <div className="mt-8 max-w-2xl mx-auto p-4 bg-red-50 border border-red-200 rounded-2xl">
+                <div className="flex items-center">
+                  <svg
+                    className="w-6 h-6 text-red-500 mr-3"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <p className="text-red-700 font-medium">{error}</p>
+                </div>
+              </div>
+            )}
+
+            {gpa !== null && (
+              <div className="mt-12 max-w-lg mx-auto">
+                <div className="bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/50 text-center overflow-hidden relative">
+                  <div
+                    className={`absolute inset-0 bg-gradient-to-br ${getGPAColor(
+                      gpa
+                    )} opacity-5`}
+                  ></div>
+                  <div className="relative z-10">
+                    <div className="mb-4">
+                      <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 text-sm font-medium mb-4">
+                        <svg
+                          className="w-4 h-4 mr-2"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        Calculation Complete
+                      </div>
+                    </div>
+                    <p className="text-lg text-slate-600 mb-2">
+                      Your Cumulative GPA is
+                    </p>
+                    <div
+                      className={`inline-block p-6 rounded-2xl bg-gradient-to-r ${getGPAColor(
+                        gpa
+                      )} mb-6`}
+                    >
+                      <p className="font-bold text-6xl md:text-7xl text-white mb-2">
+                        {gpa}
+                      </p>
+                      <p className="text-white/90 text-lg">out of 5.0</p>
+                    </div>
+                    <div className="text-sm text-slate-500 mb-6">
+                      Based on{" "}
+                      {
+                        courses.filter((c) => c.name && c.units && c.score)
+                          .length
+                      }{" "}
+                      courses • {totalUnits} total units
+                    </div>
+                    <button
+                      onClick={handleReset}
+                      className="group px-8 py-3 text-slate-600 border-2 border-slate-300 rounded-2xl hover:bg-slate-50 hover:border-slate-400 transition-all duration-300 font-medium"
+                    >
+                      <span className="flex items-center justify-center">
+                        <svg
+                          className="w-5 h-5 mr-2 group-hover:rotate-180 transition-transform duration-500"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                          />
+                        </svg>
+                        Calculate Again
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {aiSummary && !isCalculating && (
+              <div className="mt-8">
+                <AiSummary summary={aiSummary} isLoading={false} />
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
 
-      <style>{`
+        <style>{`
         @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-20px); } }
         .animate-float { animation: float 6s ease-in-out infinite; }
         .animation-delay-2000 { animation-delay: 2s; }
       `}</style>
-    </section>
+      </section>
+    </>
   );
 };
 
