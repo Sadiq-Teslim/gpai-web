@@ -11,10 +11,12 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@netlify/functions": "^4.2.1",
     "openai": "^5.9.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.6.3"
+    "react-router-dom": "^7.6.3",
+    "twilio": "^5.8.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",
