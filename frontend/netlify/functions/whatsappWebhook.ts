@@ -1,7 +1,15 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import type { Handler } from "@netlify/functions";
 import { twiml } from "twilio";
+import { createClient } from "@supabase/supabase-js";
 
 const { MessagingResponse } = twiml;
+
+// Initialize Supabase client using environment variables
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
+);
 
 // --- GPA Calculation Logic ---
 const getGradePoint = (score: number): number => {
@@ -23,139 +31,168 @@ type ConversationState = {
 };
 
 export const handler: Handler = async (event) => {
-  // Parse incoming message from Twilio
   const params = new URLSearchParams(event.body || "");
   const incomingMsg = params.get("Body")?.toLowerCase().trim() || "";
-  const from = params.get("From");
+  const from = params.get("From")!; // The user's WhatsApp phone number
 
-  console.log(`Received message from ${from}: "${incomingMsg}"`);
-
-  // --- Read the "memory" from the Twilio cookie ---
-  const cookie = event.headers.cookie || "";
-  const conversationCookie = cookie
-    .split(";")
-    .find((c) => c.trim().startsWith("conversation="));
-  let currentState: ConversationState = { status: "IDLE" };
-
-  if (conversationCookie) {
-    try {
-      // If a cookie exists, parse it to get our current state
-      currentState = JSON.parse(
-        decodeURIComponent(conversationCookie.split("=")[1])
-      );
-    } catch (e) {
-      console.error("Failed to parse conversation cookie:", e);
-      currentState = { status: "IDLE" }; // Reset if the cookie is malformed
-    }
-  }
-
-  // Create a new TwiML response object
   const twimlResponse = new MessagingResponse();
-  let nextState: ConversationState = { ...currentState }; // Start with the current state
 
-  // --- Main Conversational Logic Machine ---
-  if (currentState.status === "IDLE") {
-    // If the conversation is new or has been reset
-    if (
-      incomingMsg.includes("calculate") ||
-      incomingMsg.includes("gpa") ||
-      incomingMsg.includes("start")
-    ) {
+  // --- 1. Check if the user is registered in our database ---
+  let { data: user } = await supabase
+    .from("users")
+    .select("*")
+    .eq("phone_number", from)
+    .single();
+
+  if (!user) {
+    // --- 2. User is NOT registered ---
+    if (incomingMsg.startsWith("register")) {
+      // User wants to register, create their account
+      await supabase.from("users").insert({ phone_number: from });
       twimlResponse.message(
-        "Welcome to GPAi! 🤖\n\nHow many courses would you like to calculate?"
+        "✅ You're registered! GPAi uses cookies to keep record of our conversation data. Welcome to GPAi.\n\nYou can now start calculating your GPA. Send 'calculate' or 'gpa' to begin."
       );
-      nextState.status = "AWAITING_COURSE_COUNT";
     } else {
+      // Guide the new user to register
       twimlResponse.message(
-        `Hi there! I'm the GPAi Bot.\nSend "calculate gpa" to get started.`
+        "Welcome to GPAi! It looks like you're new here.\n\nPlease reply with 'register' to create a free account and start tracking your GPA."
       );
-      // The state remains 'IDLE'
     }
-  } else if (currentState.status === "AWAITING_COURSE_COUNT") {
-    // If we are waiting for the user to tell us the number of courses
-    const courseCount = parseInt(incomingMsg, 10);
-    if (!isNaN(courseCount) && courseCount > 0) {
-      twimlResponse.message(
-        `Great! Let's get the details for your ${courseCount} courses.\n\nPlease send the details for Course 1 in this format:\n\n*Course Code, Units, Score*\n(e.g., MTH 101, 3, 85)`
-      );
-      nextState = {
-        status: "COLLECTING_COURSES",
-        totalCourses: courseCount,
-        coursesCollected: [],
-      };
-    } else {
-      twimlResponse.message("Please enter a valid number. How many courses?");
-      // The state remains 'AWAITING_COURSE_COUNT'
-    }
-  } else if (currentState.status === "COLLECTING_COURSES") {
-    // If we are actively collecting course details
-    const parts = incomingMsg.split(",").map((p) => p.trim());
-    const [name, unitsStr, scoreStr] = parts;
-    const units = parseInt(unitsStr, 10);
-    const score = parseInt(scoreStr, 10);
+  } else {
+    // --- 3. User IS registered, proceed with the calculator logic ---
 
-    if (
-      parts.length === 3 &&
-      name &&
-      !isNaN(units) &&
-      units > 0 &&
-      !isNaN(score) &&
-      score >= 0 &&
-      score <= 100
-    ) {
-      const newCourse: Course = { name, units, score };
-      const updatedCourses = [
-        ...(currentState.coursesCollected || []),
-        newCourse,
-      ];
-      nextState.coursesCollected = updatedCourses;
+    // We still use cookies for the conversation state, but now only for registered users
+    const cookie = event.headers.cookie || "";
+    const conversationCookie = cookie
+      .split(";")
+      .find((c) => c.trim().startsWith("conversation="));
+    let currentState: ConversationState = { status: "IDLE" };
 
-      const coursesRemaining =
-        (currentState.totalCourses || 0) - updatedCourses.length;
-
-      if (coursesRemaining > 0) {
-        // If there are more courses to collect
-        twimlResponse.message(
-          `✅ Got it! *${name}* added.\n\nPlease send the details for Course ${
-            updatedCourses.length + 1
-          }:\n\n*Course Code, Units, Score*`
+    if (conversationCookie) {
+      try {
+        currentState = JSON.parse(
+          decodeURIComponent(conversationCookie.split("=")[1])
         );
-        // The state remains 'COLLECTING_COURSES'
-      } else {
-        // --- All courses collected, time to calculate! ---
-        let totalQualityPoints = 0;
-        let totalUnits = 0;
-        for (const course of updatedCourses) {
-          totalQualityPoints += getGradePoint(course.score) * course.units;
-          totalUnits += course.units;
-        }
-        const finalGpa = (totalQualityPoints / totalUnits).toFixed(2);
-
-        twimlResponse.message(
-          `🎉 Calculation complete!\n\nYour GPA is: *${finalGpa}*\n\nSend "calculate gpa" to start over.`
-        );
-        nextState = { status: "IDLE" }; // Reset the conversation
+      } catch (e) {
+        currentState = { status: "IDLE" }; // Reset on error
       }
-    } else {
-      // If the user's format was incorrect
-      twimlResponse.message(
-        `Hmm, that format doesn't look right. Please use:\n\n*Course Code, Units, Score*\n(e.g., PHY 102, 2, 68)`
-      );
-      // The state remains 'COLLECTING_COURSES'
     }
-  }
 
-  // --- Save our "memory" (the nextState) to a cookie for the next message ---
-  const responseCookie = `conversation=${encodeURIComponent(
-    JSON.stringify(nextState)
-  )}; Path=/; HttpOnly`;
+    let nextState: ConversationState = { ...currentState };
 
-  return {
-    statusCode: 200,
-    headers: {
+    if (currentState.status === "IDLE") {
+      if (incomingMsg.includes("calculate") || incomingMsg.includes("gpa")) {
+        twimlResponse.message(
+          "Welcome back! How many courses would you like to calculate for this semester?"
+        );
+        nextState.status = "AWAITING_COURSE_COUNT";
+      } else {
+        twimlResponse.message(`Hi there! Send "calculate gpa" to get started.`);
+      }
+    } else if (currentState.status === "AWAITING_COURSE_COUNT") {
+      const courseCount = parseInt(incomingMsg, 10);
+      if (!isNaN(courseCount) && courseCount > 0) {
+        twimlResponse.message(
+          `Great! Let's get the details for your ${courseCount} courses.\n\nPlease send the details for Course 1 in this format:\n\n*Course Code, Units, Score*\n(e.g., MTH 101, 3, 85)`
+        );
+        nextState = {
+          status: "COLLECTING_COURSES",
+          totalCourses: courseCount,
+          coursesCollected: [],
+        };
+      } else {
+        twimlResponse.message("Please enter a valid number. How many courses?");
+      }
+    } else if (currentState.status === "COLLECTING_COURSES") {
+      const parts = incomingMsg.split(",").map((p) => p.trim());
+      const [name, unitsStr, scoreStr] = parts;
+      const units = parseInt(unitsStr, 10);
+      const score = parseInt(scoreStr, 10);
+
+      if (
+        parts.length === 3 &&
+        name &&
+        !isNaN(units) &&
+        units > 0 &&
+        !isNaN(score) &&
+        score >= 0 &&
+        score <= 100
+      ) {
+        const newCourse: Course = { name, units, score };
+        const updatedCourses = [
+          ...(currentState.coursesCollected || []),
+          newCourse,
+        ];
+        nextState.coursesCollected = updatedCourses;
+
+        const coursesRemaining =
+          (currentState.totalCourses || 0) - updatedCourses.length;
+
+        if (coursesRemaining > 0) {
+          twimlResponse.message(
+            `✅ Got it! *${name}* added.\n\nPlease send the details for Course ${
+              updatedCourses.length + 1
+            }:\n\n*Course Code, Units, Score*`
+          );
+        } else {
+          // --- Calculation and Database Saving ---
+          let totalQualityPoints = 0;
+          let totalUnits = 0;
+          for (const course of updatedCourses) {
+            totalQualityPoints += getGradePoint(course.score) * course.units;
+            totalUnits += course.units;
+          }
+          const finalGpa = (totalQualityPoints / totalUnits).toFixed(2);
+
+          // Create a new semester entry
+          const { data: newSemester } = await supabase
+            .from("semesters")
+            .insert({
+              user_id: user.id,
+              name: `Semester ${new Date().toLocaleString()}`,
+              gpa: parseFloat(finalGpa),
+            })
+            .select()
+            .single();
+
+          if (newSemester) {
+            // Add the semester_id to each course and save them
+            const coursesToInsert = updatedCourses.map((c) => ({
+              ...c,
+              semester_id: newSemester.id,
+            }));
+            await supabase.from("courses").insert(coursesToInsert);
+          }
+
+          twimlResponse.message(
+            `🎉 Calculation complete and results saved!\n\nYour GPA for this semester is: *${finalGpa}*\n\nSend "calculate gpa" to start a new one.`
+          );
+          nextState = { status: "IDLE" }; // Reset conversation
+        }
+      } else {
+        twimlResponse.message(
+          `Hmm, that format doesn't look right. Please use:\n\n*Course Code, Units, Score*\n(e.g., PHY 102, 2, 68)`
+        );
+      }
+    }
+
+    // If registered user, set cookie header for conversation memory
+    const headers: Record<string, string> = {
       "Content-Type": "text/xml",
-      "Set-Cookie": responseCookie, // This sends the updated state back to Twilio
-    },
-    body: twimlResponse.toString(),
-  };
+    };
+
+    if (user) {
+      const responseCookie = `conversation=${encodeURIComponent(
+        JSON.stringify(nextState)
+      )}; Path=/; HttpOnly`;
+
+      headers["Set-Cookie"] = responseCookie;
+    }
+
+    return {
+      statusCode: 200,
+      headers,
+      body: twimlResponse.toString(),
+    };
+  }
 };
