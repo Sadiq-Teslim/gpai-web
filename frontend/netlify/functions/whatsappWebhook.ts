@@ -30,7 +30,7 @@ type ConversationState = {
   coursesCollected?: Course[];
 };
 
-export const handler: Handler = async (event) => {
+export const handler: Handler = async (event): Promise<HandlerResponse> => {
   const params = new URLSearchParams(event.body || "");
   const incomingMsg = params.get("Body")?.toLowerCase().trim() || "";
   const from = params.get("From")!; // The user's WhatsApp phone number
@@ -38,7 +38,7 @@ export const handler: Handler = async (event) => {
   const twimlResponse = new MessagingResponse();
 
   // --- 1. Check if the user is registered in our database ---
-  let { data: user } = await supabase
+  const { data: user } = await supabase
     .from("users")
     .select("*")
     .eq("phone_number", from)
