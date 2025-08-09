@@ -89,7 +89,8 @@ export const handler: Handler = async (
     twimlResponse.message(
       "Got it! 📸 Analyzing your results sheet now... This might take a moment. 🔬"
     );
-    const backgroundFunctionUrl = "/.netlify/functions/ocrProcessor-background";
+    const siteUrl = `https://${event.headers.host}`;
+    const backgroundFunctionUrl = `${siteUrl}/.netlify/functions/ocrProcessor-background`;
     console.log(`Invoking background function at: ${backgroundFunctionUrl}`);
 
     // Asynchronously invoke the background function without waiting.
