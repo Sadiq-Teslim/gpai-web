@@ -59,6 +59,7 @@ async function structureTextToCourses(
 
 // --- Main Background Handler ---
 export const handler: Handler = async (event) => {
+  console.log("--- ocrProcessor-background START ---");
   const { mediaUrl, from, user } = JSON.parse(event.body || "{}");
   if (!mediaUrl || !from || !user) {
     return { statusCode: 400, body: "Missing required parameters." };

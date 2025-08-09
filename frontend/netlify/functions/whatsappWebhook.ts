@@ -56,6 +56,7 @@ async function getAiSummary(
 export const handler: Handler = async (
   event: HandlerEvent
 ): Promise<HandlerResponse> => {
+  console.log("--- whatsappWebhook START ---");
   const params = new URLSearchParams(event.body || "");
   const incomingMsg = params.get("Body")?.toLowerCase().trim() || "";
   const from = params.get("From")!;
@@ -88,15 +89,28 @@ export const handler: Handler = async (
     twimlResponse.message(
       "Got it! 📸 Analyzing your results sheet now... This might take a moment. 🔬"
     );
+    const backgroundFunctionUrl = "/.netlify/functions/ocrProcessor-background";
+    console.log(`Invoking background function at: ${backgroundFunctionUrl}`);
 
     // Asynchronously invoke the background function without waiting.
-    fetch(`${process.env.URL}/.netlify/functions/ocrProcessor-background`, {
+    // We use a .then().catch() here instead of await so the function can return immediately.
+    fetch(backgroundFunctionUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mediaUrl, from, user }),
-    }).catch((err) =>
-      console.error("Error invoking background function:", err)
-    );
+    })
+      .then((response) => {
+        if (!response.ok) {
+          console.error(
+            `Background function invocation failed with status: ${response.status}`
+          );
+        } else {
+          console.log("Successfully invoked background function.");
+        }
+      })
+      .catch((err) =>
+        console.error("FATAL: Error invoking background function fetch:", err)
+      );
   } else {
     // --- Registered User Sends a Text Message ---
     // Check for an OCR confirmation first
