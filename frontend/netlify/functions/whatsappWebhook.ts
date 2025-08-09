@@ -1,17 +1,20 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import type { Handler, HandlerResponse } from "@netlify/functions"; // FIX: Import HandlerResponse
+import type { Handler, HandlerEvent, HandlerResponse } from "@netlify/functions";
 import { twiml } from "twilio";
 import { createClient } from "@supabase/supabase-js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const { MessagingResponse } = twiml;
 
-// Initialize Supabase client using environment variables
+// --- Initialize Clients ---
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_ANON_KEY!
 );
 
-// --- GPA Calculation Logic ---
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
+
+// --- GPA Logic ---
 const getGradePoint = (score: number): number => {
   if (score >= 70) return 5.0;
   if (score >= 60) return 4.0;
@@ -21,7 +24,7 @@ const getGradePoint = (score: number): number => {
   return 0.0;
 };
 
-// --- Type definitions for our conversation's "memory" ---
+// --- Type Definitions ---
 type Course = { name: string; units: number; score: number };
 
 type ConversationState = {
@@ -30,15 +33,38 @@ type ConversationState = {
   coursesCollected?: Course[];
 };
 
-export const handler: Handler = async (event): Promise<HandlerResponse> => {
-  // FIX: Simplified the handler type back to just Handler
+// --- NEW: AI Helper Function ---
+async function getAiSummary(
+  courses: Course[],
+  gpa: string
+): Promise<string | null> {
+  try {
+    const prompt = `
+      You are GPAi, a friendly and encouraging academic advisor. 
+      A student just calculated their GPA. Their GPA is ${gpa}. 
+      Their courses and scores are: ${JSON.stringify(courses)}.
+      Write a short, personalized, and encouraging summary of their performance in a single paragraph. 
+      Mention their highest-scoring course by name as a 'strong point'.
+      Keep the tone positive and motivating, like you're talking to a friend.
+    `;
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  } catch (error) {
+    console.error("Gemini AI Summary Error:", error);
+    return null; // Return null if the AI call fails
+  }
+}
+
+// --- Main Handler ---
+export const handler: Handler = async (event: HandlerEvent): Promise<HandlerResponse> => {
   const params = new URLSearchParams(event.body || "");
   const incomingMsg = params.get("Body")?.toLowerCase().trim() || "";
-  const from = params.get("From")!; // The user's WhatsApp phone number
+  const from = params.get("From")!;
 
   const twimlResponse = new MessagingResponse();
 
-  // --- 1. Check if the user is registered in our database ---
   const { data: user } = await supabase
     .from("users")
     .select("*")
@@ -46,28 +72,24 @@ export const handler: Handler = async (event): Promise<HandlerResponse> => {
     .single();
 
   if (!user) {
-    // --- 2. User is NOT registered ---
     if (incomingMsg.startsWith("register")) {
-      // User wants to register, create their account
       await supabase.from("users").insert({ phone_number: from });
       twimlResponse.message(
-        "✅ You're registered! GPAi uses cookies to keep record of our conversation data. Welcome to GPAi.\n\nYou can now start calculating your GPA. Send 'calculate' or 'gpa' to begin."
+        "✅ You're registered! Welcome to GPAi.\n\nSend 'calculate' or 'gpa' to begin."
       );
     } else {
-      // Guide the new user to register
       twimlResponse.message(
-        "Welcome to GPAi! It looks like you're new here.\n\nPlease reply with 'register' to create a free account and start tracking your GPA."
+        "Welcome to GPAi! Please reply with 'register' to create your free account."
       );
     }
 
-    // FIX: Return the response for unregistered users here.
     return {
       statusCode: 200,
       headers: { "Content-Type": "text/xml" },
       body: twimlResponse.toString(),
     };
   } else {
-    // --- 3. User IS registered, proceed with the calculator logic ---
+    // --- User IS registered, proceed with calculator ---
     const cookie = event.headers.cookie || "";
     const conversationCookie = cookie
       .split(";")
@@ -80,7 +102,7 @@ export const handler: Handler = async (event): Promise<HandlerResponse> => {
           decodeURIComponent(conversationCookie.split("=")[1])
         );
       } catch (e) {
-        currentState = { status: "IDLE" }; // Reset on error
+        currentState = { status: "IDLE" };
       }
     }
 
@@ -89,7 +111,7 @@ export const handler: Handler = async (event): Promise<HandlerResponse> => {
     if (currentState.status === "IDLE") {
       if (incomingMsg.includes("calculate") || incomingMsg.includes("gpa")) {
         twimlResponse.message(
-          "Welcome back! How many courses would you like to calculate for this semester?"
+          "Welcome back! How many courses would you like to calculate?"
         );
         nextState.status = "AWAITING_COURSE_COUNT";
       } else {
@@ -141,28 +163,26 @@ export const handler: Handler = async (event): Promise<HandlerResponse> => {
             }:\n\n*Course Code, Units, Score*`
           );
         } else {
-          // --- Calculation and Database Saving ---
+          // --- Calculation, DB Saving, and AI Analysis ---
           let totalQualityPoints = 0;
           let totalUnits = 0;
-          for (const course of updatedCourses) {
+          updatedCourses.forEach((course) => {
             totalQualityPoints += getGradePoint(course.score) * course.units;
             totalUnits += course.units;
-          }
+          });
           const finalGpa = (totalQualityPoints / totalUnits).toFixed(2);
 
-          // Create a new semester entry
+          // Save to database
           const { data: newSemester } = await supabase
             .from("semesters")
             .insert({
               user_id: user.id,
-              name: `Semester ${new Date().toLocaleString()}`,
+              name: `Semester ${new Date().toLocaleDateString()}`,
               gpa: parseFloat(finalGpa),
             })
             .select()
             .single();
-
           if (newSemester) {
-            // Add the semester_id to each course and save them
             const coursesToInsert = updatedCourses.map((c) => ({
               ...c,
               semester_id: newSemester.id,
@@ -170,14 +190,24 @@ export const handler: Handler = async (event): Promise<HandlerResponse> => {
             await supabase.from("courses").insert(coursesToInsert);
           }
 
+          // Send the GPA result first
           twimlResponse.message(
-            `🎉 Calculation complete and results saved!\n\nYour GPA for this semester is: *${finalGpa}*\n\nSend "calculate gpa" to start a new one.`
+            `🎉 Calculation complete!\n\nYour GPA for this semester is: *${finalGpa}*`
           );
+
+          // Call the AI for analysis
+          const summary = await getAiSummary(updatedCourses, finalGpa);
+          if (summary) {
+            // If the AI call was successful, send a second message with the summary
+            twimlResponse.message(`🤖 *GPAi's Analysis:*\n\n${summary}`);
+          }
+
+          twimlResponse.message(`Send "calculate gpa" to start a new one.`);
           nextState = { status: "IDLE" }; // Reset conversation
         }
       } else {
         twimlResponse.message(
-          `Hmm, that format doesn't look right. Please use:\n\n*Course Code, Units, Score*\n(e.g., PHY 102, 2, 68)`
+          `Hmm, that format doesn't look right. Please use:\n\n*Course Code, Units, Score*`
         );
       }
     }
@@ -186,7 +216,6 @@ export const handler: Handler = async (event): Promise<HandlerResponse> => {
       JSON.stringify(nextState)
     )}; Path=/; HttpOnly`;
 
-    // Return the response for the registered user
     return {
       statusCode: 200,
       headers: {
