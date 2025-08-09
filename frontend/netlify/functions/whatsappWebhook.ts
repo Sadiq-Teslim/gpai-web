@@ -7,31 +7,25 @@ import type {
 import { twiml } from "twilio";
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { ImageAnnotatorClient } from "@google-cloud/vision";
 
 const { MessagingResponse } = twiml;
 
-// --- Initialize ALL Clients ---
+// --- Initialize Clients ---
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_ANON_KEY!
 );
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY!);
 
-// --- UPDATED: Securely initialize the Google Cloud Vision Client ---
-// 1. Decode the Base64 encoded credentials from Netlify environment variables
-const visionCredentialsJson = Buffer.from(
-  process.env.GOOGLE_VISION_CREDENTIALS_BASE64!,
-  "base64"
-).toString("utf-8");
-const visionCredentials = JSON.parse(visionCredentialsJson);
+// --- Type Definitions ---
+type Course = { name: string; units: number; score: number };
+type ConversationState = {
+  status: "IDLE" | "AWAITING_COURSE_COUNT" | "COLLECTING_COURSES";
+  totalCourses?: number;
+  coursesCollected?: Course[];
+};
 
-// 2. Initialize the client with the decoded credentials object
-const visionClient = new ImageAnnotatorClient({
-  credentials: visionCredentials,
-});
-
-// --- GPA Logic (Unchanged) ---
+// --- Helper Functions ---
 const getGradePoint = (score: number): number => {
   if (score >= 70) return 5.0;
   if (score >= 60) return 4.0;
@@ -41,78 +35,19 @@ const getGradePoint = (score: number): number => {
   return 0.0;
 };
 
-// --- Type Definitions (Updated for OCR) ---
-type Course = { name: string; units: number; score: number };
-
-type ConversationState = {
-  status:
-    | "IDLE"
-    | "AWAITING_COURSE_COUNT"
-    | "COLLECTING_COURSES"
-    | "AWAITING_OCR_CONFIRMATION";
-  totalCourses?: number;
-  coursesCollected?: Course[];
-  ocrCourses?: Course[];
-};
-
-// --- AI Helper Function 1: Get Performance Summary (Unchanged) ---
 async function getAiSummary(
   courses: Course[],
   gpa: string
 ): Promise<string | null> {
   try {
-    const prompt = `
-      You are GPAi, a friendly and encouraging academic advisor. 
-      A student just calculated their GPA. Their GPA is ${gpa}. 
-      Their courses and scores are: ${JSON.stringify(courses)}.
-      Write a summary of their performance and what you think they can do to improve. It is justa one-off advice, not a continous one so its not conversational. 
-      Mention their highest-scoring course by name as a 'strong point'.
-      Keep the tone positive and motivating, like you're talking to a friend. 
-      Don't make it too long. It should be as brief as possible. 
-      Also, suggest what GPA they can have the following semester to balance things up (that's if the GPA is low below 4.0). 
-      If the GPA is already above 4.0, just mention that they're doing good.
-    `;
-
+    const prompt = `You are GPAi, a friendly academic advisor. A student's GPA is ${gpa}. Their courses are: ${JSON.stringify(
+      courses
+    )}. Write a brief, encouraging summary. Mention their highest-scoring course as a 'strong point'. If the GPA is below 4.0, suggest a target GPA for the next semester. If it's above 4.0, commend them. Keep it concise.`;
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const result = await model.generateContent(prompt);
     return result.response.text();
   } catch (error) {
     console.error("Gemini AI Summary Error:", error);
-    return null;
-  }
-}
-
-// --- AI Helper Function 2: Extract Text from Image (OCR) ---
-async function extractTextFromImage(imageUrl: string): Promise<string | null> {
-  try {
-    const [result] = await visionClient.textDetection(imageUrl);
-    return result.fullTextAnnotation?.text || null;
-  } catch (error) {
-    console.error("Google Cloud Vision Error:", error);
-    return null;
-  }
-}
-
-// --- AI Helper Function 3: Structure OCR Text with Gemini ---
-async function structureTextToCourses(
-  rawText: string
-): Promise<Course[] | null> {
-  try {
-    const prompt = `You are a data extraction assistant. The following text was extracted from a student's result sheet. Identify every course, its credit units, and its score. Return the data as a clean JSON array of objects, where each object has "name", "units", and "score". The final output must only be the JSON array, with no extra text or markdown. Raw Text: "${rawText}"`;
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const result = await model.generateContent(prompt);
-    // A more robust way to extract JSON from the AI's response
-    const jsonStringMatch = result.response
-      .text()
-      .match(/```json\s*([\s\S]*?)\s*```|(\[[\s\S]*\])/);
-    const jsonString = jsonStringMatch
-      ? jsonStringMatch[1] || jsonStringMatch[2]
-      : null;
-
-    if (!jsonString) return null;
-    return JSON.parse(jsonString);
-  } catch (error) {
-    console.error("Gemini Data Structuring Error:", error);
     return null;
   }
 }
@@ -129,115 +64,105 @@ export const handler: Handler = async (
 
   const twimlResponse = new MessagingResponse();
 
-  const cookie = event.headers.cookie || "";
-  const conversationCookie = cookie
-    .split(";")
-    .find((c) => c.trim().startsWith("conversation="));
-  let currentState: ConversationState = { status: "IDLE" };
-  if (conversationCookie) {
-    try {
-      currentState = JSON.parse(
-        decodeURIComponent(conversationCookie.split("=")[1])
+  // --- Step 1: Get User from Database ---
+  const { data: user } = await supabase
+    .from("users")
+    .select("*")
+    .eq("phone_number", from)
+    .single();
+
+  if (!user) {
+    // --- Unregistered User Flow ---
+    if (incomingMsg.startsWith("register")) {
+      await supabase.from("users").insert({ phone_number: from });
+      twimlResponse.message(
+        "✅ You're registered! Welcome to GPAi.\n\nTo start, send me a clear picture of your results or reply 'calculate' to enter them manually."
       );
-    } catch (e) {
-      currentState = { status: "IDLE" };
-    }
-  }
-  let nextState: ConversationState = { ...currentState };
-
-  // --- Main Logic Branch: Image or Text? ---
-  if (numMedia > 0 && mediaUrl) {
-    // --- OCR FLOW ---
-    twimlResponse.message(
-      "Got it! 📸 Analyzing your results sheet now... This might take a moment."
-    );
-    // Send an immediate response so the user knows we're working on it
-    // We will send the actual results in a follow-up message
-
-    // Start processing asynchronously
-    (async () => {
-      const rawText = await extractTextFromImage(mediaUrl);
-      const followUpTwiml = new MessagingResponse();
-
-      if (!rawText) {
-        followUpTwiml.message(
-          "Sorry, I couldn't read the text from that image. Please try a clearer picture."
-        );
-      } else {
-        const courses = await structureTextToCourses(rawText);
-        if (!courses || courses.length === 0) {
-          followUpTwiml.message(
-            "I found text, but couldn't identify any courses. Try entering them manually by sending 'calculate'."
-          );
-        } else {
-          let confirmationMessage =
-            "Okay, here's what I found. Does this look correct?\n\n";
-          courses.forEach((c) => {
-            confirmationMessage += `- *${c.name}*, ${c.units} Units, Score: ${c.score}\n`;
-          });
-          confirmationMessage +=
-            "\nReply *yes* to calculate, or *no* to start over.";
-          followUpTwiml.message(confirmationMessage);
-          nextState = {
-            status: "AWAITING_OCR_CONFIRMATION",
-            ocrCourses: courses,
-          };
-          // TODO: Send follow-up message via Twilio REST API
-        }
-      }
-    })();
-  } else {
-    // --- TEXT-BASED FLOW ---
-    const { data: user } = await supabase
-      .from("users")
-      .select("*")
-      .eq("phone_number", from)
-      .single();
-
-    if (!user) {
-      if (incomingMsg.startsWith("register")) {
-        await supabase.from("users").insert({ phone_number: from });
-        twimlResponse.message(
-          "✅ You're registered! Welcome to GPAi.\n\nSend 'calculate' or 'gpa' to begin."
-        );
-      } else {
-        twimlResponse.message(
-          "Welcome to GPAi! Please reply with 'register' to create your free account."
-        );
-      }
     } else {
-      // Registered User Conversation Logic...
-      if (currentState.status === "AWAITING_OCR_CONFIRMATION") {
-        if (incomingMsg === "yes") {
-          const courses = currentState.ocrCourses || [];
-          let totalQualityPoints = 0,
-            totalUnits = 0;
-          courses.forEach((c) => {
-            totalQualityPoints += getGradePoint(c.score) * c.units;
-            totalUnits += c.units;
-          });
-          const finalGpa = (totalQualityPoints / totalUnits).toFixed(2);
+      twimlResponse.message(
+        "Welcome to GPAi! Please reply with 'register' to create your free account."
+      );
+    }
+  } else if (numMedia > 0 && mediaUrl) {
+    // --- Registered User Sends an Image ---
+    twimlResponse.message(
+      "Got it! 📸 Analyzing your results sheet now... This might take a moment. 🔬"
+    );
 
-          // TODO: Save OCR results to database here
+    // Asynchronously invoke the background function without waiting.
+    fetch(`${process.env.URL}/.netlify/functions/ocrProcessor-background`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mediaUrl, from, user }),
+    }).catch((err) =>
+      console.error("Error invoking background function:", err)
+    );
+  } else {
+    // --- Registered User Sends a Text Message ---
+    // Check for an OCR confirmation first
+    const ocrData = user.ocr_data as {
+      status: string;
+      courses: Course[];
+    } | null;
+    if (ocrData?.status === "AWAITING_OCR_CONFIRMATION") {
+      if (incomingMsg === "yes") {
+        const courses = ocrData.courses;
+        let totalQualityPoints = 0,
+          totalUnits = 0;
+        courses.forEach((c) => {
+          totalQualityPoints += getGradePoint(c.score) * c.units;
+          totalUnits += c.units;
+        });
+        const finalGpa = (totalQualityPoints / totalUnits).toFixed(2);
 
-          twimlResponse.message(
-            `🎉 Perfect! Your GPA from the image is: *${finalGpa}*`
-          );
-          const summary = await getAiSummary(courses, finalGpa);
-          if (summary)
-            twimlResponse.message(`🤖 *GPAi's Analysis:*\n\n${summary}`);
-          twimlResponse.message(
-            `Send "calculate gpa" to start over, or send another image.`
-          );
-
-          nextState = { status: "IDLE" };
-        } else {
-          twimlResponse.message(
-            "No problem. Let's start over. Send 'calculate' to enter courses manually."
-          );
-          nextState = { status: "IDLE" };
+        const { data: newSemester } = await supabase
+          .from("semesters")
+          .insert({
+            user_id: user.id,
+            name: `Semester (from Image) ${new Date().toLocaleDateString()}`,
+            gpa: parseFloat(finalGpa),
+          })
+          .select()
+          .single();
+        if (newSemester) {
+          const coursesToInsert = courses.map((c) => ({
+            ...c,
+            semester_id: newSemester.id,
+          }));
+          await supabase.from("courses").insert(coursesToInsert);
         }
-      } else if (currentState.status === "IDLE") {
+
+        twimlResponse.message(
+          `🎉 Perfect! Your results are saved. Your GPA from the image is: *${finalGpa}*`
+        );
+        const summary = await getAiSummary(courses, finalGpa);
+        if (summary)
+          twimlResponse.message(`🤖 *GPAi's Analysis:*\n\n${summary}`);
+      } else {
+        twimlResponse.message(
+          "No problem. Let's start over. Send 'calculate' or send a new image."
+        );
+      }
+      await supabase.from("users").update({ ocr_data: null }).eq("id", user.id);
+    } else {
+      // --- If no OCR, handle the normal text-based calculator using cookies ---
+      const cookie = event.headers.cookie || "";
+      const conversationCookie = cookie
+        .split(";")
+        .find((c) => c.trim().startsWith("conversation="));
+      let currentState: ConversationState = { status: "IDLE" };
+      if (conversationCookie) {
+        try {
+          currentState = JSON.parse(
+            decodeURIComponent(conversationCookie.split("=")[1])
+          );
+        } catch (e) {
+          currentState = { status: "IDLE" };
+        }
+      }
+      let nextState: ConversationState = { ...currentState };
+
+      if (currentState.status === "IDLE") {
         if (incomingMsg.includes("calculate") || incomingMsg.includes("gpa")) {
           twimlResponse.message(
             "Welcome back! How many courses would you like to calculate?"
@@ -252,7 +177,7 @@ export const handler: Handler = async (
         const courseCount = parseInt(incomingMsg, 10);
         if (!isNaN(courseCount) && courseCount > 0) {
           twimlResponse.message(
-            `Great! Let's get the details for your ${courseCount} courses.\n\nPlease send the details for Course 1 in this format:\n\n*Course Code, Units, Score*\n(e.g., MTH 101, 3, 85)`
+            `Great! Let's get the details for your ${courseCount} courses.\n\nPlease send the details for Course 1 in this format:\n\n*Course Code, Units, Score*`
           );
           nextState = {
             status: "COLLECTING_COURSES",
@@ -269,7 +194,6 @@ export const handler: Handler = async (
         const [name, unitsStr, scoreStr] = parts;
         const units = parseInt(unitsStr, 10);
         const score = parseInt(scoreStr, 10);
-
         if (
           parts.length === 3 &&
           name &&
@@ -287,7 +211,6 @@ export const handler: Handler = async (
           nextState.coursesCollected = updatedCourses;
           const coursesRemaining =
             (currentState.totalCourses || 0) - updatedCourses.length;
-
           if (coursesRemaining > 0) {
             twimlResponse.message(
               `✅ Got it! *${name}* added.\n\nPlease send the details for Course ${
@@ -297,9 +220,9 @@ export const handler: Handler = async (
           } else {
             let totalQualityPoints = 0,
               totalUnits = 0;
-            updatedCourses.forEach((course) => {
-              totalQualityPoints += getGradePoint(course.score) * course.units;
-              totalUnits += course.units;
+            updatedCourses.forEach((c) => {
+              totalQualityPoints += getGradePoint(c.score) * c.units;
+              totalUnits += c.units;
             });
             const finalGpa = (totalQualityPoints / totalUnits).toFixed(2);
 
@@ -324,10 +247,8 @@ export const handler: Handler = async (
               `🎉 Calculation complete and results saved!\n\nYour GPA for this semester is: *${finalGpa}*`
             );
             const summary = await getAiSummary(updatedCourses, finalGpa);
-            if (summary) {
+            if (summary)
               twimlResponse.message(`🤖 *GPAi's Analysis:*\n\n${summary}`);
-            }
-            twimlResponse.message(`Send "calculate gpa" to start a new one.`);
             nextState = { status: "IDLE" };
           }
         } else {
@@ -336,15 +257,21 @@ export const handler: Handler = async (
           );
         }
       }
+
+      const responseCookie = `conversation=${encodeURIComponent(
+        JSON.stringify(nextState)
+      )}; Path=/; HttpOnly`;
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "text/xml", "Set-Cookie": responseCookie },
+        body: twimlResponse.toString(),
+      };
     }
   }
 
-  const responseCookie = `conversation=${encodeURIComponent(
-    JSON.stringify(nextState)
-  )}; Path=/; HttpOnly`;
   return {
     statusCode: 200,
-    headers: { "Content-Type": "text/xml", "Set-Cookie": responseCookie },
+    headers: { "Content-Type": "text/xml" },
     body: twimlResponse.toString(),
   };
 };
