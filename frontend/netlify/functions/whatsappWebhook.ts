@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import type { Handler } from "@netlify/functions";
+import type { Handler, HandlerResponse } from "@netlify/functions"; // FIX: Import HandlerResponse
 import { twiml } from "twilio";
 import { createClient } from "@supabase/supabase-js";
 
@@ -31,6 +31,7 @@ type ConversationState = {
 };
 
 export const handler: Handler = async (event): Promise<HandlerResponse> => {
+  // FIX: Simplified the handler type back to just Handler
   const params = new URLSearchParams(event.body || "");
   const incomingMsg = params.get("Body")?.toLowerCase().trim() || "";
   const from = params.get("From")!; // The user's WhatsApp phone number
@@ -58,10 +59,15 @@ export const handler: Handler = async (event): Promise<HandlerResponse> => {
         "Welcome to GPAi! It looks like you're new here.\n\nPlease reply with 'register' to create a free account and start tracking your GPA."
       );
     }
+
+    // FIX: Return the response for unregistered users here.
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "text/xml" },
+      body: twimlResponse.toString(),
+    };
   } else {
     // --- 3. User IS registered, proceed with the calculator logic ---
-
-    // We still use cookies for the conversation state, but now only for registered users
     const cookie = event.headers.cookie || "";
     const conversationCookie = cookie
       .split(";")
@@ -176,22 +182,17 @@ export const handler: Handler = async (event): Promise<HandlerResponse> => {
       }
     }
 
-    // If registered user, set cookie header for conversation memory
-    const headers: Record<string, string> = {
-      "Content-Type": "text/xml",
-    };
+    const responseCookie = `conversation=${encodeURIComponent(
+      JSON.stringify(nextState)
+    )}; Path=/; HttpOnly`;
 
-    if (user) {
-      const responseCookie = `conversation=${encodeURIComponent(
-        JSON.stringify(nextState)
-      )}; Path=/; HttpOnly`;
-
-      headers["Set-Cookie"] = responseCookie;
-    }
-
+    // Return the response for the registered user
     return {
       statusCode: 200,
-      headers,
+      headers: {
+        "Content-Type": "text/xml",
+        "Set-Cookie": responseCookie,
+      },
       body: twimlResponse.toString(),
     };
   }
