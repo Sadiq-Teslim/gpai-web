@@ -19,6 +19,8 @@ export const handler = async (event: any) => {
       Mention their highest-scoring course by name as a 'strong point'.
       Keep the tone positive and motivating, like you're talking to a friend. 
       Don't make it too long. It should be as brief as possible. 
+      Also, suggest what GPA they can have the following semester to balance things up (that's if the GPA is low below 4.0). 
+      If the GPA is already above 4.0, just mention that they're doing good.
     `;
 
 
