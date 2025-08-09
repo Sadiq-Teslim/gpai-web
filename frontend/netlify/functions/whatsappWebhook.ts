@@ -43,9 +43,12 @@ async function getAiSummary(
       You are GPAi, a friendly and encouraging academic advisor. 
       A student just calculated their GPA. Their GPA is ${gpa}. 
       Their courses and scores are: ${JSON.stringify(courses)}.
-      Write a short, personalized, and encouraging summary of their performance in a single paragraph. 
+      Write a summary of their performance and what you think they can do to improve. It is justa one-off advice, not a continous one so its not conversational. 
       Mention their highest-scoring course by name as a 'strong point'.
-      Keep the tone positive and motivating, like you're talking to a friend.
+      Keep the tone positive and motivating, like you're talking to a friend. 
+      Don't make it too long. It should be as brief as possible. 
+      Also, suggest what GPA they can have the following semester to balance things up (that's if the GPA is low below 4.0). 
+      If the GPA is already above 4.0, just mention that they're doing good.
     `;
 
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
