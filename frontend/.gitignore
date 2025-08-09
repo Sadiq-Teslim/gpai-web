@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+gpai-1-cd637d0d7b39.json
 
 # Editor directories and files
 .vscode/*
