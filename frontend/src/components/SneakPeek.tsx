@@ -1,7 +1,47 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from "react";
 
 const SneakPeek = () => {
   const [isVisible, setIsVisible] = useState(false);
+
+  const [email, setEmail] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [isError, setIsError] = useState(false);
+
+  const API_URL = 'https://gpai-server-e7ar.onrender.com/api/newsletter/subscribe';
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setIsError(true);
+      setMessage('Please provide your email address.');
+      return;
+    }
+    
+    setIsLoading(true);
+    setMessage('');
+    setIsError(false);
+
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, source: 'sneak_peek_waitlist' }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'An error occurred.');
+      
+      setIsError(false);
+      setMessage(data.message);
+      setEmail('');
+    } catch (error: any) {
+      setIsError(true);
+      setMessage(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -202,16 +242,30 @@ const SneakPeek = () => {
             Get notified when GPAi WhatsApp Bot launches
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4">
+          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-4">
             <input
               type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               placeholder="Enter your email address"
               className="flex-1 px-6 py-4 rounded-2xl bg-white/20 border border-white/30 text-white placeholder-white/70 focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/30 transition-all duration-300"
+              disabled={isLoading}
             />
-            <button className="px-8 py-4 bg-gradient-to-r from-orange-500 to-pink-500 text-white font-bold rounded-2xl hover:from-orange-600 hover:to-pink-600 transition-all duration-300 hover:scale-105 shadow-xl">
-              Notify Me
+            <button 
+              type="submit"
+              className="px-8 py-4 bg-gradient-to-r from-orange-500 to-pink-500 text-white font-bold rounded-2xl hover:from-orange-600 hover:to-pink-600 transition-all duration-300 hover:scale-105 shadow-xl disabled:opacity-75 disabled:cursor-not-allowed flex items-center justify-center"
+              disabled={isLoading}
+            >
+              {isLoading ? <div className="w-6 h-6 border-2 border-t-transparent border-white rounded-full animate-spin"></div> : 'Notify Me'}
             </button>
-          </div>
+          </form>
+
+          {/* Display success or error messages */}
+          {message && (
+            <p className={`mt-4 text-sm ${isError ? 'text-red-400' : 'text-green-300'}`}>
+              {message}
+            </p>
+          )}
 
           <p className="text-white/60 text-sm mt-4">
             Join 500+ students already on the waitlist
@@ -239,7 +293,7 @@ const SneakPeek = () => {
               />
             </svg>
             Expected Launch:{" "}
-            <span className="font-bold text-white ml-2">Q3 2025</span>
+            <span className="font-bold text-white ml-2">Q2 2026</span>
           </div>
         </div>
       </div>

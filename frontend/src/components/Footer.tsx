@@ -1,5 +1,48 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState } from "react";
+
 const Footer = () => {
   const currentYear = new Date().getFullYear();
+
+  const [email, setEmail] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [isError, setIsError] = useState(false);
+
+  const API_URL =
+    "https://gpai-server-e7ar.onrender.com/api/newsletter/subscribe";
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setIsError(true);
+      setMessage("Please enter a valid email.");
+      return;
+    }
+
+    setIsLoading(true);
+    setMessage("");
+    setIsError(false);
+
+    try {
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, source: "footer_subscribe" }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "An error occurred.");
+
+      setIsError(false);
+      setMessage(data.message);
+      setEmail("");
+    } catch (error: any) {
+      setIsError(true);
+      setMessage(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const quickLinks = [
     { name: "Home", href: "#hero" },
@@ -14,7 +57,7 @@ const Footer = () => {
       href: "mailto:sadiqadetola08@gmail.com",
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+          <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
         </svg>
       ),
     },
@@ -76,16 +119,28 @@ const Footer = () => {
               <h4 className="text-lg font-semibold text-white mb-3">
                 Send us a message
               </h4>
-              <div className="flex flex-col sm:flex-row gap-3">
+              <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3">
                 <input
                   type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="Your email address"
                   className="flex-1 px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-300 placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                  disabled={isLoading}
                 />
-                <button className="px-6 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium rounded-lg hover:shadow-lg hover:scale-105 transition-all duration-300">
-                  Subscribe
+                <button 
+                  type="submit"
+                  className="px-6 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium rounded-lg hover:shadow-lg hover:scale-105 transition-all duration-300 disabled:opacity-75 disabled:cursor-not-allowed flex items-center justify-center"
+                  disabled={isLoading}
+                >
+                  {isLoading ? <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin"></div> : 'Subscribe'}
                 </button>
-              </div>
+              </form>
+              {message && (
+                <p className={`mt-3 text-sm ${isError ? 'text-red-400' : 'text-green-400'}`}>
+                  {message}
+                </p>
+              )}
             </div>
           </div>
 
@@ -187,7 +242,7 @@ const Footer = () => {
                 </strong>{" "}
                 This software, including all source code, design elements,
                 algorithms, user interface, documentation, and associated
-                intellectual property, is the exclusive property of Sadiq Teslim
+                intellectual property, is the exclusive property of ACE TECH WORLD
                 and GPAi.
               </p>
               <p className="mb-3">
